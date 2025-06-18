@@ -1,1 +1,1 @@
-# SemTaint
+- SemTait will be open-sourced after publishing.
