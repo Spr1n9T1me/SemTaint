@@ -1,0 +1,608 @@
+[[taint-analysis]]
+include::attributes.adoc[]
+
+= How to Use Taint Analysis?
+
+Tai-e provides a configurable and powerful taint analysis for detecting security vulnerabilities.
+We develop taint analysis based on the pointer analysis framework, enabling it to leverage advanced techniques (including various context sensitivity and heap abstraction techniques) and implementations (including the handling of complex language features such as reflection and lambda functions) provided by the pointer analysis framework.
+This documentation is dedicated to providing guidance on using our taint analysis.
+
+== Enabling Taint Analysis
+
+Taint analysis can be enabled in one of two ways, or both approaches together:
+
+* using the YAML configuration file.
+
+* using the programmatic configuration provider.
+
+[[yaml-configuration-file]]
+=== YAML Configuration File
+
+In Tai-e, taint analysis is designed and implemented as a plugin of pointer analysis framework.
+To enable taint analysis with the YAML configuration file, simply start pointer analysis with option `taint-config`, for example:
+
+[source]
+----
+-a pta=...;taint-config:<path/to/config>;...
+----
+
+then Tai-e will run taint analysis (together with pointer analysis) using a configuration file specified by `<path/to/config>` (if you need to specify multiple configuration files, please refer to <<Multiple Configuration Files>>).
+In the upcoming section, we will provide a comprehensive guide on crafting a configuration file.
+
+TIP: You could use various pointer analysis techniques to obtain different precision/efficiency tradeoffs.
+For additional details, please refer to <<pointer-analysis-framework#pointer-analysis-framework,Pointer Analysis Framework>>.
+
+
+==== Interactive Mode
+
+Interactive mode enables users to modify the taint configuration file(s) and re-run taint analysis without needing to re-run the whole program analysis.
+
+This feature significantly speeds up both taint configuration development/debugging and production scenarios that running multiple configuration sets.
+
+To enable interactive mode, append additional `taint-interactive-mode:true` option when starting the taint analysis, for example:
+
+[source]
+----
+-a pta=...;taint-config:<path/to/config>;taint-interactive-mode:true;...
+----
+
+Once the taint analysis completes, Tai-e will enter an interactive state where you can:
+
+1. Modify the taint configuration file(s) and press `r` in the console to re-run the taint analysis with your updated configuration.
+2. Press `e` in the console to exit interactive mode.
+
+
+=== Programmatic Taint Configuration Provider
+
+In addition to the YAML configuration file, Tai-e also supports programmatic taint configuration.
+
+To enable it, start pointer analysis with option `taint-config-providers`, for example:
+
+[source]
+----
+-a pta=...;taint-config-providers:[my.example.MyTaintConfigProvider];...
+----
+
+The class `my.example.MyTaintConfigProvider` should extend the interface `pascal.taie.analysis.pta.plugin.taint.TaintConfigProvider`.
+
+[source,java,subs="verbatim"]
+----
+package my.example;
+
+public class MyTaintConfigProvider extends TaintConfigProvider {
+    public MyTaintConfigProvider(ClassHierarchy hierarchy, TypeSystem typeSystem) {
+        super(hierarchy, typeSystem);
+    }
+
+    @Override
+    protected List<Source> sources() { return List.of(); }
+
+    @Override
+    protected List<Sink> sinks() { return List.of(); }
+// ...
+}
+----
+
+
+== Configuring Taint Analysis
+
+In this section, we present instructions on configuring sources, sinks, taint transfers, and sanitizers for the taint analysis using a YAML configuration file.
+To get a broad understanding, you can start by examining the https://github.com/pascal-lab/Tai-e/blob/master/src/test/resources/pta/taint/taint-config.yml[taint-config.yml] file from our test cases as an illustrative example.
+
+NOTE: Certain configuration values include special characters, such as spaces, `[`, and `]`.
+To ensure these values are correctly interpreted by the YAML parser, please make sure to enclose them within *quotation marks*.
+
+=== Basic Concepts
+
+We first present several basic concepts employed in the configuration.
+
+==== Type, Method, and Field Signatures
+
+In taint configuration, you'll need to specify types, methods, and fields within the program.
+This is done using their signatures, as detailed in <<types-classes#,How to Specify and Access Types, Classes, and Class Members (Methods and Fields)>>.
+
+To simplify the configuration process, our taint analysis also supports <<types-classes#signature-patterns,Signature Patterns>>.
+These patterns provide a more flexible way to specify program elements.
+For example, instead of listing every method in a class, you might use a pattern to match all methods with a certain return type or parameter list.
+
+This approach reduces the amount of configuration needed and makes it easier to maintain and update your taint analysis settings.
+
+==== Index Reference
+
+In taint analysis configuration, it's often necessary to specify:
+
+* A variable
+* A field of an object referenced by a variable
+* Elements of an array referenced by a variable
+
+These specifications may be required at a call site or within a method.
+To facilitate this, we introduce the concept of **index reference**.
+
+An index reference consists of two parts:
+
+1. **Index**: This refers to the specified variable (also called the _variable index_).
+2. **Reference**: This indicates whether we're referring to:
+- The variable itself
+- A field of the object referenced by the variable
+- Elements of the array referenced by the variable
+
+This combination of variable indexes and references provides a flexible way to pinpoint exactly which program element you want to include in your taint analysis configuration.
+Let's break this down.
+
+===== Variable Index of A Call Site
+
+We classify variables at a call site into several kinds, and provide their corresponding indexes below:
+
+[cols="1,3,1"]
+|===
+| Kind | Description | Index
+
+| Result variable
+| The variable receiving the method call result (i.e., the left-hand side or LHS variable)
+| `result`
+
+| Base variable
+| The variable pointing to the receiver object of the method call (absent in static method calls)
+| `base`
+
+| Arguments
+| The arguments of the call site, indexed starting from 0
+| `0`, `1`, `2`, ...
+|===
+
+For example, for a method call
+
+[source,java]
+----
+r = o.foo(p, q);
+----
+
+* The index of variable `r` is `result`.
+* The index of variable `o` is `base`.
+* The indexes of variables `p` and `q` are `0` and `1`.
+
+===== Variable Index of A Method
+
+Within a method, we currently support indexing for method parameters.
+Similar to call site arguments, the parameters are indexed starting from 0.
+For example, the indexes of parameters `t`, `s`, and `o` of method `foo` below are `0`, `1`, and `2`.
+
+[source,java]
+----
+package org.example;
+
+class MyClass {
+    void foo(T t, String s, Object o) {
+        ...
+    }
+}
+----
+
+===== Reference
+
+The reference part is optional and specifies which aspect of the indexed variable we're interested in:
+
+1. **No reference**: Refers to the variable itself as specified by the index.
+2. **Field reference**: Append `.<field name>` to the index (e.g., `0.f` refers to field `f` of the object pointed to by the variable with index `0`).
+3. **Array element reference**: Append `[\*]` to the index (e.g., `result[*]` refers to all elements of the array pointed to by the result variable).
+
+NOTE: `[` and `]` are special characters in YAML, so you need to enclose them in quotes like `"result[*]"`.
+
+This flexible system allows for precise specification of variables, object fields, and array elements in various contexts within your taint analysis configuration.
+
+=== Sources
+Taint objects are generated by sources.
+In the configuration file, sources are specified as a list of source entries following key `sources`, for example:
+
+[source,yaml]
+----
+sources:
+  - { kind: call, method: "<javax.servlet.ServletRequestWrapper: java.lang.String getParameter(java.lang.String)>", index: result }
+  - { kind: param, method: "<com.example.Controller: java.lang.String index(javax.servlet.http.HttpServletRequest)>", index: 0 }
+  - { kind: field, field: "<SourceSink: java.lang.String info>" }
+----
+
+Our taint analysis supports several kinds of sources, as introduced in the next sections.
+
+==== Call Sources
+
+This should be the most-commonly used source kind, for the cases that the taint objects are generated at call sites.
+The format of this kind of sources is:
+
+[source,yaml,subs="+normal"]
+----
+- { kind: call, method: METHOD_SIGNATURE, index: INDEX_REF, [underline]#type: TYPE# }
+----
+
+If you write such a source in the configuration, then when the taint analysis finds that method  `METHOD_SIGNATURE` is invoked at call site _l_, it will generate a taint object of type `TYPE` for the reference indicated by `INDEX_REF` at call site _l_.
+For how to specify `METHOD_SIGNATURE` and `INDEX_REF`, please refer to <<type-method-and-field-signatures,Type, Method, and Field Signatures>> and <<Variable Index of A Call Site>>.
+
+We use [underline]#underlining# to emphasize the optional nature of [underline]#`type: TYPE`# in call source configuration.
+When it is not specified, the taint analysis will utilize the corresponding declared type from the method.
+This includes using the return type for the _result variable_, the declaring class type for the _base variable_, and the parameter types for _arguments_ as the type for the generated taint object.
+
+TIP: Someone may wonder why we need to include `type: TYPE` in the configuration for taint objects when we can already obtain the declared type from the method.
+This is because the type of taint objects should align with the corresponding actual objects.
+However, in certain situations, the actual object type related to the method might be a *subclass* of the declared type.
+Therefore, we use `type: TYPE` to specify the precise object type in such cases.
+As an illustration, consider the code snippet below.
+In this snippet, the source method `Z.source()` declares its return type as `X`, but it actually returns an object of type `Y`, which is a subclass of `X`.
+Therefore, we can define `type: Y` for the taint object generated by `Z.source()` method.
+
+[source,java]
+----
+class X {...}
+
+class Y extends X { ... }
+
+class Z {
+    X source() {
+        ...
+        return new Y();
+    }
+}
+----
+
+NOTE: Throughout the rest of this documentation, we will also use [underline]#underlining# to indicate *optional* elements.
+The reasons for specifying `type: TYPE` in other cases are similar to those for call sources.
+In these situations, the type of generated taint object may be a *subclass* of the corresponding declared type.
+
+==== Parameter Sources
+Certain methods, such as entry methods, do not have explicit call sites within the program, making it impossible to generate taint objects for variables at their call sites.
+Nevertheless, there are situations where generating taint objects for their parameters can be useful.
+To address this requirement, our taint analysis provides the capability to configure parameter sources:
+
+[source,yaml,subs="+normal"]
+----
+- { kind: param, method: METHOD_SIGNATURE, index: INDEX_REF, [underline]#type: TYPE# }
+----
+
+If you include this type of source in the configuration, when the taint analysis determines that the method `METHOD_SIGNATURE` is reachable, it will create a taint object of `TYPE` for the reference indicated by `INDEX_REF`.
+For guidance on specifying `METHOD_SIGNATURE` and `INDEX_REF`, please refer to the <<type-method-and-field-signatures,Type, Method, and Field Signatures>> and <<Variable Index of A Method>>.
+
+==== Field Sources
+
+Our taint analysis also enables users to designate fields as taint sources using the following format:
+
+[source,yaml,subs="+normal"]
+----
+- { kind: field, field: FIELD_SIGNATURE, [underline]#type: TYPE# }
+----
+
+When you include this type of source in the configuration, if the taint analysis identifies that the field `FIELD_SIGNATURE` is loaded into a variable `v` (e.g., `v = o.f`), it will generate a taint object of `TYPE` for `v`.
+For instructions on specifying `FIELD_SIGNATURE`, please refer to <<type-method-and-field-signatures,Type, Method, and Field Signatures>>.
+
+=== Sinks
+
+At present, our taint analysis supports specifying specific variables at call sites of sink methods as sinks.
+In the configuration file, sinks are defined as a list of sink entries under the key `sinks`:
+
+[source,yaml]
+----
+sinks:
+  - { method: METHOD_SIGNATURE, index: INDEX_REF }
+  - ...
+----
+
+If you include this type of sink in the configuration, when the taint analysis identifies that the method `METHOD_SIGNATURE` is invoked at call site `l` and the reference at `l`, as indicated by `INDEX_REF`, points to any taint objects, it will generate reports for the detected taint flows.
+
+For guidance on specifying `METHOD_SIGNATURE` and `INDEX_REF`, please refer to <<type-method-and-field-signatures,Type, Method, and Field Signatures>> and <<Variable Index of A Method>>.
+
+=== Taint Transfers
+
+In taint analysis, taint is associated with data content and can move between objects. This process, known as _taint transfer_, is common in real-world code.
+Effectively managing these transfers is crucial for detecting potential security vulnerabilities.
+
+==== Introduction
+
+Here, we utilize an example to demonstrate the concept of taint transfer and its impact on taint analysis.
+
+[source,java,linenums]
+----
+String taint = getSecret(); // source
+StringBuilder sb = new StringBuilder();
+sb.append("abc");
+sb.append(taint); // taint is transferred to sb
+sb.append("xyz");
+String s = sb.toString(); // taint is transferred to s
+leak(s); // sink
+----
+
+Suppose we consider `getSecret()` as the source and `leak()` as the sink.
+In this scenario, the code at line 1 acquires secret data in the form of a string and stores it in the variable `taint`.
+This secret data eventually flows to the sink at line 7 through two taint transfers:
+
+1. The method call to `append()` at line 4 adds the contents of `taint` to `sb`, resulting in the `StringBuilder` object pointed to by `sb` containing the secret data.
+Therefore, it should also be regarded as tainted data.
+In essence, the `append()` call at line 4 transfers taint from `taint` to `sb`.
+
+2. The method call to `toString()` at line 6 converts the `StringBuilder` to a `String`, which holds the same content as the `StringBuilder`, including the secret data.
+In essence, `toString()` transfers taint from `sb` to `s`.
+
+In this example, if the taint analysis fails to propagate taint from `taint` to `sb` and from `sb` to `s`, it will be unable to detect the privacy leakage.
+To address such scenarios, our taint analysis allows users to specify which methods trigger taint transfers, facilitating the appropriate propagation of taint flow.
+
+==== Configuration
+In this section, we provide instructions on configuring taint transfers.
+Taint transfer essentially involves the triggering of taint propagation from specific reference (e.g., variables or fields) to other references at call sites through method calls.
+We refer to the source of taint transfer as the _from-ref_ and the target as the _to-ref_.
+For example, in the case of `sb.append(taint)` from the previous example, `taint` serves as the from-ref, and `sb` acts as the to-ref.
+
+In the configuration file, taint transfers are defined as a list of transfer entries under the key `transfers`, as shown in the example below:
+
+[source,yaml]
+----
+transfers:
+  - { method: "<java.lang.StringBuilder: java.lang.StringBuilder append(java.lang.String)>", from: 0, to: base }
+  - { method: "<java.lang.StringBuilder: java.lang.String toString()>", from: base, to: result }
+----
+
+which can handle the taint transfers of the example in <<Introduction>>.
+Each transfer entry follows this format:
+
+[source,yaml,subs="+normal"]
+----
+- { method: METHOD_SIGNATURE, from: INDEX_REF, to: INDEX_REF, [underline]#type: TYPE# }
+----
+
+Here, `METHOD_SIGNATURE` represents the method that triggers taint transfer, `from` and `to` specify the from-ref and to-ref at the call site.
+`TYPE` denotes the type of the transferred taint object, which is also *optional*.
+
+Taint transfer can be intricate in real-world programs.
+To detect a broader range of security vulnerabilities, our taint analysis supports various types of taint transfers using <<index-reference>>.
+You can use different expressions for `from` and `to` in transfer entries to enable different types of taint transfers, as outlined below:
+
+|===
+| Transfer | From | To
+
+| variable -> variable
+| `INDEX`
+| `INDEX`
+
+| variable -> array
+| `INDEX`
+| `INDEX[*]`
+
+| variable -> field
+| `INDEX`
+| `INDEX.FIELD_NAME`
+
+| array -> variable
+| `INDEX[*]`
+| `INDEX`
+
+| field -> variable
+| `INDEX.FIELD_NAME`
+| `INDEX`
+|===
+
+As a reference, we use an example here to show usefulness of array -> variable transfer.
+
+[source,java,linenums]
+----
+String cmd = request.getParameter("cmd"); // source
+Object[] cmds = new Object[]{cmd};
+Expression expr = Factory.newExpression(cmds); // taint transfer: cmds[0] -> expr
+execute(expr); // sink
+----
+
+Here, assuming we consider `getParameter()` as the source and `execute()` as the sink, the code retrieves a value from an HTTP request at line 1 (which is uncontrollable and thus treated as a source) and stores it in `cmd`.
+At line 2, `cmd` is stored in an `Object` array, which is then used to create an `Expression` at line 3.
+Finally, the `Expression` is passed to `execute()`, which might lead to a command injection.
+
+To detect this injection, we need to propagate taint from `cmd` to `expr` when analyzing method call `expr = Factory.newExpression(cmds)`.
+At this call, the taint stored in array `cmds` is transferred to `expr`, and we can capture this behavior by specifying the following taint transfer entry:
+
+[source,yaml]
+----
+- { method: "<Factory: Expression newExpression(java.lang.Object[])>", from: "0[*]", to: result }
+----
+
+Here, `from: "0[*]"` indicates that the taint analysis will examine _all elements_ in the array pointed to by _0-th parameter_ (i.e., `cmds`), and if it detects any taint objects, it will propagate them to the variable specified by `to: result` (i.e., `expr`).
+
+=== Sanitizers
+Our taint analysis allows users to define sanitizers in order to reduce false positives.
+This can be accomplished by writing a list of sanitizer entries under the key `sanitizers` in the configuration, as demonstrated below:
+
+[source,yaml]
+----
+sanitizers:
+  - { kind: param, method: METHOD_SIGNATURE, index: INDEX }
+  - ...
+----
+
+Subsequently, the taint analysis will prevent the propagation of taint objects to the parameter specified by `INDEX` in the method `METHOD_SIGNATURE`.
+
+[NOTE]
+====
+Currently, sanitizers do not support index references.
+You can only specify variables using the `INDEX` parameter.
+====
+
+// TODO: === Call-Site Mode
+
+=== Multiple Configuration Files
+
+The taint analysis supports the loading of multiple configuration files, eliminating the need for users to consolidate all configurations into a single extensive file.
+Users can simply place all relevant configuration files within a designated directory and then provide the path to this directory (`<path/to/config>`) when enabling the taint analysis.
+
+TIP: The taint analysis will traverse the directory iteratively during the configuration loading process.
+Therefore, you have the flexibility to organize the configuration files as you see fit, including placing them in multiple subdirectories if desired.
+
+== Output of Taint Analysis
+Currently, the output of the taint analysis consists of two parts: console output and taint flow graph.
+
+=== Console Output
+In console output, the taint analysis reports the detected taint flows using the following format:
+
+[source]
+----
+Detected n taint flow(s):
+TaintFlow{SOURCE_POINT -> SINK_POINT}
+...
+----
+
+Each taint flow is a pair of source point and sink point.
+A source point refers to a variable that points to a newly-generated taint object, while a sink point designates a variable pointing to taint objects that have flowed from the source point.
+
+Given that there are several kinds of <<Sources>>, each kind has a corresponding source point representation with a specific format:
+
+[cols="1,2,2,3"]
+|===
+| Source | Source Point Description | Source Point Format | Explanation
+
+| Call source
+| A variable at a call site of the source method.
+| `METHOD_SIGNATURE[i@Ln] CALL_STMT/INDEX`
+a| * `METHOD_SIGNATURE`: The method containing the call site.
+   * `[i@Ln]`: Position of the call site.
+   * `CALL_STMT`: The call statement (site).
+   * `INDEX_REF`: <<index-reference>> of the source point.
+
+| Parameter source
+| A parameter of the source method.
+| `METHOD_SIGNATURE/INDEX`
+a| * `METHOD_SIGNATURE`: The source method.
+   * `INDEX_REF`: <<index-reference>> of the source point.
+
+| Field source
+| A variable that receives loaded value from the source field.
+| `METHOD_SIGNATURE[i@Ln] LOAD_STMT`
+a| * `METHOD_SIGNATURE`: The method containing the load statement.
+   * `[i@Ln]`: Position of the load statement.
+   * `LOAD_STMT`: The load statement.
+|===
+
+The `[i@Ln]` represent the position of a statement, where `i` is the index of the statement in the IR, and `n` is the line number of the statement in the source code, which can help you locate the statement.
+
+Here are some examples of source points for each kind:
+
+* Call source: `<Main: void main(java.lang.String[])>[3@L7] pw = invokestatic Data.getPassword()/result`
+* Parameter source: `<Controller: void doGet(javax.servlet.http.HttpServletRequest,javax.servlet.http.HttpServletResponse)>/0`
+* Field source: `<Main: void main(java.lang.String[])> [29@L24] name = p.<Person: java.lang.String name>`
+
+The format of the sink point is exactly the same as call source point, so we won't repeat the explanation here.
+
+=== Taint Flow Graph
+The console output only provides the starting and ending points of the taint flows.
+However, for users to validate the reported taint flows and associated security vulnerabilities, it is crucial to investigate the detailed propagation path of taint objects.
+To meet such needs, we define _taint flow graph_ (TFG for short), whose nodes are the program pointers (e.g., variables and fields) that point to taint objects, and edges represent how taint objects flow among the pointers, so that users can check taint flows by going over the TFG.
+
+To address this requirement, we introduce the concept of _taint flow graph_ (TFG).
+In a TFG, nodes represent program pointers (such as variables and fields) that point to taint objects, while edges illustrate how taint objects move between these pointers.
+This allows users to review taint flows by analyzing the TFG.
+
+Tai-e will output the path of the dumped TFG:
+
+[source]
+----
+Dumping ...\tai-e\output\taint-flow-graph.dot
+----
+
+TFG is dumped as a https://graphviz.org/doc/info/lang.html[DOT] graph.
+For a better experience, we recommend installing https://graphviz.org/[Graphviz] and using it to convert DOT to SVG with the following command:
+
+[source,shell]
+----
+$ dot -Tsvg taint-flow-graph.dot -o taint-flow-graph.svg
+----
+
+then you can open the TFG with your web browser and examine it.
+
+// TODO: Explain what the different arrows and node shapes represent
+
+NOTE: We plan to develop more user-friendly mechanisms for examining taint analysis results in the future.
+
+// TODO: == Troubleshooting
+
+== Pre-prepared Commonly Used Taint Configuration
+
+Manually collecting and writing taint analysis configurations for different vulnerability types can be time-consuming and challenging, especially for developers and security researchers with limited experience.
+To help users streamline this process and improve the efficiency and accuracy of vulnerability detection, we have curated _Commonly Used Taint Configuration_. 
+When creating or modifying your own taint analysis configuration, you can refer to this configuration for guidance in your process.
+
+Commonly Used Taint Configuration is a comprehensive collection of source, sink, and transfer rules tailored for various common vulnerability types.
+ Currently, this collection contains 327 source rules, 920 sink rules, and 138 transfer rules, enabling users to adapt and extend them to detect 13 types of vulnerabilities.
+
+To further enhance the user experience, we have also carefully organized the project structure by packages and vulnerability types to ensure clarity and ease of understanding of the rules, allowing users to quickly locate and apply the relevant rules.
+
+
+=== Organizational structure
+
+The structure of this project is as follows:
+
+[source]
+----
+Tai-e/src/main/resources/commonly-used-taint-config
+├── sink
+│   ├── infoleak              # contains 141 sinks
+│   │   └── java-io
+│   └── injection             # contains 779 sinks
+│       ├── android
+│       │   └── sql-injection
+│       ├── java
+│       │   ├── crlf
+│       │   ├── path-traversal
+│       │   ├── rce
+│       │   └── ...
+│       └── ...
+├── source
+│   ├── infoleak              # contains 158 sources
+│   │   └── java
+│   └── injection             # contains 169 sources
+│       ├── apache-struts2
+│       ├── javax
+│       │   ├── javax-portlet
+│       │   ├── javax-servlet
+│       │   └── javax-swing
+│       └── ...
+└── transfer                  # contains 138 transfers about String
+----
+
+Specifically, this project firstly categorizes the configuration files into three main categories: sink, source, and transfer.
+
+* `sink` category: Contains sinks configurations files related to information leakage and injection vulnerabilities, further subdivided into two subdirectories:
+** `infoleak`: Categorized by package name.
+** `injection`: Categorized by vulnerability type.
+
+* `source` category: Contains sources configurations related to information leakage and injection vulnerabilities, further subdivided into two subdirectories:
+** `infoleak`: Categorized by package name.
+** `injection`: Categorized by package name.
+
+* `transfer` category: Contains transfers.
+
+Additionally, each subdirectory contains a corresponding `README` file that provides a brief overview of the relevant vulnerability types.
+
+=== How to Use it? (An Example)
+
+Users can directly integrate the configuration files from this collection into the <<yaml-configuration-file,Configuration File for the Tai-e taint analysis>>,
+or modify and extend them as needed to better meet specific analysis requirements.
+
+Here is an example of how to use the configuration files from this collection.
+If the user needs to detect an RCE (Remote Code Execution) injection vulnerability in a Java project using the *Jetty software library*, the following steps can be taken to modify the taint configuration file:
+
+1. Add the source rules related to the *Jetty software library* from the file `source/injection/jetty/jetty-http/jetty-http.yml`.
+2. Add the sink rules related to the *RCE type injection vulnerability* from the file `sink/injection/java/rce/command.yml`.
+3. Add the transfer rules related to *String type* from the file `transfer/string-transfers.yml`.
+
+After these steps, the taint configuration file will be as follows:
+
+```YAML
+source:
+  - { kind: call, method: "<org.eclipse.jetty.http.HttpCookie: java.lang.String getName()>", index: result, type: "java.lang.String" }
+  - { kind: call, method: "<org.eclipse.jetty.http.HttpCookie: java.lang.String getValue()>", index: result, type: "java.lang.String" }
+  - { kind: call, method: "<org.eclipse.jetty.http.HttpCookie: java.lang.String asString()>", index: result, type: "java.lang.String" }
+#...
+
+sinks:
+  - { method: "<java.lang.Runtime: java.lang.Process exec(java.lang.String)>", index: 0 }
+  - { method: "<java.lang.Runtime: java.lang.Process exec(java.lang.String[])>", index: 0 }
+  - { method: "<java.lang.Runtime: java.lang.Process exec(java.lang.String, java.lang.String[])>", index: 0 }
+#...
+
+transfer:
+  - { method: "<java.lang.String: java.lang.String substring(int)>", from: base, to: result }
+  - { method: "<java.lang.String: java.lang.String substring(int,int)>", from: base, to: result }
+#...
+```
+

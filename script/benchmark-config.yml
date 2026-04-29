@@ -1,0 +1,40 @@
+# Benchmark Configuration File
+# Define all test projects with their specific configurations
+
+# Default configuration template (will be used for all projects unless overridden)
+defaults:
+  pta:
+    ignore-methods: false
+    framework-enable: true
+    container-enable: true
+    only-reach-sink: true
+    only-reach-app: false
+    enable-taint: true
+    k-level: 1
+    cs: "cs:ci"
+
+  app:
+    cache-mode: false
+    jar-mode: true
+    app-graph: true
+    base-packages:
+      - "java.util"
+
+  path:
+    entry-output-file: "output/entry.txt"
+    app-class-path: ""
+    app-lib-path: ""
+
+# List of test projects
+# Two modes are supported:
+# 1. JAR mode (jar-mode: true) - Use jar-path for fat JAR or directory with JARs
+# 2. Class path mode (jar-mode: false) - Use app-class-path and app-lib-path
+projects:
+  - name: pybbs
+    app-class-path:
+      -
+    app-lib-path:
+    package-name: co.yiiu.pybbs  # TODO: Verify package name
+    taint-config: src\main\resources\taint-config-all.yml
+
+

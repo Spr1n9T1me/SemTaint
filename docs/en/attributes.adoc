@@ -1,0 +1,15 @@
+:doctype: book
+:idprefix:
+:idseparator: -
+:toc: left
+:toclevels: 4
+:tabsize: 4
+:numbered:
+:sectanchors:
+:sectnums:
+:hide-uri-scheme:
+:docinfo: shared
+:attribute-missing: warn
+:source-highlighter: coderay
+:chomp: default headers packages
+:authors: Tian Tan; Yue Li; Teng Zhang

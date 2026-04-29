@@ -1,0 +1,11 @@
+# macOS hidden file
+.DS_Store
+.gradle/
+.idea/
+.vscode/
+bin/
+build/
+cache/
+out/
+output/
+java-benchmarks/

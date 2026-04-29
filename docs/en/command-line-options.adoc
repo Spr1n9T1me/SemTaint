@@ -1,0 +1,149 @@
+include::attributes.adoc[]
+
+= How to Run Tai-e (command-line options)?
+
+== Prerequisites
+
+Before running Tai-e, please finish following steps:
+
+* Install **Java 17** (or higher version) on your system (Tai-e is developed in Java, and it runs on all major operating systems including Windows/Linux/macOS).
+* Clone submodule `java-benchmarks` (this repo contains the Java libraries used by the analysis; it is large and may take a while to clone):
+
+[source,shell,subs="verbatim"]
+----
+git submodule update --init --recursive
+----
+
+The main class (entry) of Tai-e is `pascal.taie.Main`, and we classified its options into three categories:
+
+* _Program options_: specifying the program to analyze.
+* _Analysis options_: specifying the analyses to execute.
+* _Other options_
+
+Below we introduce these options.
+
+== Program Options
+
+These options specify the Java program (say _P_) and library to be analyzed.
+
+> Currently, Tai-e leverages Soot frontend to parse Java programs and help build Tai-e’s IR. Soot contains two frontends, one for parsing Java source files (.java) and the other one for bytecode files (.class). The former is outdated (only partially supports Java versions up to 7); while the latter, though quite robust (works properly for the .class files compiled by up to Java 17), cannot fully satisfy our requirements. Hence, we plan to develop our own frontend for Tai-e to address the above issues. For now, we advice using Tai-e to analyze _bytecode_, instead of source code, if possible.
+
+
+* Class paths (-cp, --class-path): `-cp <path>[ -cp <path>...]`
+** Class paths for Tai-e to locate the classes of _P_, and this option can be repeated multiple times to specify multiple paths. Currently, Tai-e supports following types of paths:
+*** Relative/Absolute path to a jar file
+*** Relative/Absolute path to a directory which contains `.class` (or `.java`) files
+
+* Application class paths (-acp, --app-class-path): `-acp <path>[ -acp <path>...]`
+** Class paths for Tai-e to locate the application classes of _P_. The usage of this option is exactly the same as `-cp`.
+** The difference between `-cp` and `-acp` is that for the classes in `-cp`, only the ones referenced by the application/main/input classes are added to the closed world of _P_; but all classes in `-acp` will be added to the closed world.
+
+* Main class (-m, --main-class): `-m <main-class>`
+** The main class (entry) of _P_. This class must declare a method with signature `public static void main(String[])`.
+
+* Input classes (--input-classes): `--input-classes=<inputClass>[,<inputClass>...]`
+** Add classes to the closed world of _P_. Some Java programs use dynamic class loading so that Tai-e cannot reference to the relevant classes from the main class. Such classes can be added to the closed world by this option.
+** The `<inputClass>` should follow the format of fully-qualified name in Java, e.g., `org.package.MyClass`.
+
+* Java version (-java): `-java <version>`
+** _Default value_: 6
+** Specify the version of Java library used in the analyses. When this option is given, Tai-e will locate the corresponding Java library in submodule `java-benchmarks` and add it to the class paths. Currently, we provide libraries for Java versions 3, 4, 5, 6, 7, and 8. Support for newer Java versions is under development.
+
+* Prepend JVM Class Path (-pp, --prepend-JVM)
+** Prepend the class path of the JVM (which runs Tai-e) to the analysis class path. This means that if you run Tai-e with Java 17, then you can use Tai-e to analyze the library of Java 17. Note that this option will disable `-java` option.
+
+* Allow phantom references (-ap, --allow-phantom)
+** Allow Tai-e to process phantom references, i.e., the referenced classes that are not found in the class paths.
+
+
+== Analysis Options
+
+These options decide the analyses to be executed and their behaviors. We divided these options into two groups: general analysis options which affect multiple analyses, and specific analysis options which are relevant to individual analysis.
+
+[#general-analysis-options]
+=== General Analysis Options
+
+* Build IR in advance (--pre-build-ir)
+** Build IRs for all available methods before starting any analyses.
+
+* Analysis scope (-scope): `-scope <scope>`
+** _Default value_: `APP`
+** Specify the analysis scope for class and method analyses.There are three valid choices:
+*** `APP`: application classes only
+*** `ALL`: all classes
+*** `REACHABLE`: classes that are reachable in the call graph (this scope requires analysis `cg`, i.e., call graph construction)
+
+=== Specific Analysis Options
+
+To execute an analysis, you need to specify its _id_ and _options_ (if necessary). All available analyses in Tai-e and their information (e.g., _id_ and available _options_) are listed in the analysis configuration file `src/main/resources/tai-e-analyses.yml`.
+
+There are two mutually-exclusive approaches to specify the analyses, by command-line **options** or by **file**, as described below.
+
+* Analysis option (-a, --analysis): `-a <id>[=<key>:<value>;...]`
+
+Specify analyses by command-line options. For running analysis with id `A`, just give `-a A`. For specifying some analysis options for `A`, just append them to analysis id (connected by `=`), and separate them by `;`, for example:
+
+[source,subs="verbatim"]
+----
+-a A=enableX:true;threshold:100;log-level:info
+----
+
+> Note that on Unix-like systems (e.g., Linux), you may need to quote the option values when they include `;`, for example:
+
+[source,subs="verbatim"]
+----
+-a "A=enableX:true;threshold:100;log-level:info"
+----
+
+The option system is expressive, and it supports various types of option values, such as boolean, string, integer, and list.
+
+Option `-a` is repeatable, so that if you need to execute multiple analyses in a single run of Tai-e, say `A1` and `A2`, just repeat `-a` like: `-a A1 -a A2`.
+
+* Plan file (-p, --plan-file): `-p <file-path>`
+
+Alternatively, you can specify the analyses to be executed (called an analysis plan) in a plan file, and use `-p` to process the file. Similar to `-a`, you need to specify the _id_ and _options_ (if necessary) for each analysis in the file. The plan file should be written in YAML.
+
+Note that options `-a` and `-p` are mutually-exclusive, thus you _cannot_ specify them simultaneously. See <<analysis-management#analysis-management, Analysis Management>> for more information about these two options.
+
+* Keep results of specific analyses (-kr, --keep-result): `-kr <id>[,<id>...]`
+
+By default, Tai-e keeps results of all executed analyses in memory. If you run multiple analyses and care about the results of only some of them, you could use this option to specify these analyses, then every time Tai-e executes an analysis, it will automatically detect and clean the analysis results which are not used by subsequent analyses to save memory.
+
+
+== Other Options
+
+* Help (-h, --help)
+** Print help information for all available options. This option will disable all other given options.
+
+* Options file (--options-file): `--options-file <optionsFile>`
+** You can specify the command-line options in a file and use `--options-file` to process the file. When this option is given, Tai-e ignores all other command-line options, and only processes the options in the file. The options file should be written in YAML.
+** Tai-e will output all options to `output/options.yml` at each run.
+
+* Generate plan file (-g, --gen-plan-file)
+** Merely generate analysis plan file (the plan will not be executed) to `output/tai-e-plan.yml`.
+** This option works only when the analysis plan is specified by option `-a`, and it is provided to help the user compose analysis plan file.
+
+* World cache mode (-wc, --world-cache-mode)
+** Enable world cache mode to save build time by caching the completed built world to the disk.
+** When enabled, it will attempt to load the cached world instead of rebuilding it from scratch, resulting in a substantial acceleration of world-building process. This applies as long as the analyzed program (i.e. classPath, mainClass and so on) remain unchanged. This option is particularly useful during analysis development, when the analyzed program remains the same, but the analyzer code is modified and run repeatedly, thus saving developers' valuable time.
+
+* Specify output directory (--output-dir): `--output-dir <outputDir>`
+** By default, Tai-e stores all outputs, such as logs, IR, and various analysis results, in the `output` folder within the current working directory. If you prefer to save outputs to a different directory, simply use this option.
+
+== A Usage Example of Command-Line Options
+
+We give an example of how to analyze a program by Tai-e. Suppose we want to analyze a program _P_ as described below:
+
+* _P_ consists of two files: `foo.jar` (a JAR file) and `my program/dir/bar.class` (a class file).
+* _P_'s main class is `baz.Main`
+* _P_ is analyzed together with Java 8
+* we run 2-type-sensitive pointer analysis and limit the execution time of pointer analysis to 60 seconds
+
+Then the options would be:
+
+[source,shell,subs="+normal"]
+----
+java -jar tai-e-all.jar -cp foo.jar -cp [underline]#"my program/dir/"# -m baz.Main -java 8 -a [underline]#"pta=cs:2-type;time-limit:60;"#
+----
+
+> Note again that you need to [underline]#enclose command-line parameters in quotes# if they contain semicolons `;` or spaces `&#32;`.

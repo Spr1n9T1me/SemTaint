@@ -1,0 +1,22 @@
+sources:
+  - { kind: call, method: "<SourceSink: java.lang.String source*(*{0+})>", index: result }
+  - { kind: field, field: "<SourceSink: * tainted*>" }
+
+sinks:
+  - { method: "<SourceSink: void sink(java.lang.String)>", index: 0 }
+  - { method: "<SourceSink: void sink(java.lang.String,int)>", index: 0 }
+  - { method: "<SourceSink: void sink(java.lang.String,java.lang.String)>", index: 1 }
+  - { method: "<SourceSink: java.lang.String sourceAndSink(java.lang.String,java.lang.String)>", index: 0 }
+
+transfers:
+  - { method: "<java.lang.String: java.lang.String concat(java.lang.String)>", from: base, to: result }
+  - { method: "<java.lang.String: java.lang.String concat(java.lang.String)>", from: 0, to: result }
+  - { method: "<java.lang.String: char[] toCharArray()>", from: base, to: result }
+  - { method: "<java.lang.String: void <init>(char[])>", from: 0, to: base }
+  - { method: "<java.lang.String: void getChars(int,int,char[],int)>", from: base, to: 2 }
+  - { method: "<java.lang.AbstractStringBuilder^: * append(java.lang.Object^)>", from: 0, to: base }
+  - { method: "<java.lang.AbstractStringBuilder^: * toString()>", from: base, to: result }
+
+sanitizers:
+  - { kind: param, method: "<Sanitizer: java.lang.String sanitize(java.lang.String)>", index: 0 }
+  - { kind: param, method: "<Sanitizer: Sanitizer sanitize()>", index: base }

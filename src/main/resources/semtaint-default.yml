@@ -1,0 +1,32 @@
+pta:
+  only-app: false
+  ignore-methods: false
+  framework-enable: true
+  container-enable: true
+  container-precise: false
+  cs: cs:ci
+  k-level: 2
+  # taint flow information
+  enable-taint: true
+  print-log: false
+  only-reach-sink: true
+  only-reach-app: false
+  taint-config: taint-config.yml
+
+app:
+  prepend-jvm: true
+  cache-mode: false
+  jar-mode: false
+  app-graph: true
+  base-packages:
+    - java.util
+  package-name: org.owasp.webgoat
+
+path:
+  entry-output-file: output/entry.txt
+  app-class-path:
+    - webgoat\BOOT-INF\classes
+  app-lib-path: webgoat\BOOT-INF\lib
+
+
+

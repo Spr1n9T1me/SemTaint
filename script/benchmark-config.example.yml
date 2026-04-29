@@ -1,0 +1,112 @@
+# Comprehensive Benchmark Configuration Example
+# This file demonstrates various real-world scenarios
+
+defaults:
+  pta:
+    ignore-methods: false
+    framework-enable: false
+    container-enable: true
+    only-reach-sink: true
+    only-reach-app: false
+    enable-taint: true
+    k-level: 2
+    cs: "cs:ci"
+
+  app:
+    cache-mode: true
+    jar-mode: true  # Will be auto-set based on project config
+    app-graph: true
+    base-packages:
+      - "java.util"
+
+  path:
+    entry-output-file: "output/entry.txt"
+    app-class-path: ""
+    app-lib-path: ""
+
+projects:
+  # ========================================
+  # JAR Mode Examples
+  # ========================================
+
+  # Example 1: Simple Spring Boot Fat JAR
+  - name: simple-springboot
+    jar-path: projects/simple-app/target
+    package-name: com.example.simple
+    taint-config: src/main/resources/taint-config-default.yml
+
+  # Example 2: WAR Application
+  - name: legacy-war-app
+    jar-path: projects/legacy-app/target/app.war
+    package-name: com.company.legacy
+    taint-config: src/main/resources/taint-config-default.yml
+
+  # Example 3: Gradle Build
+  - name: gradle-app
+    jar-path: projects/gradle-app/build/libs
+    package-name: com.example.gradle
+    taint-config: src/main/resources/taint-config-default.yml
+
+  # Example 4: Security Test Project
+  - name: webgoat
+    jar-path: TaintBench/webgoat
+    package-name: org.owasp.webgoat
+    taint-config: src/main/resources/taint-config-webgoat.yml
+
+  # ========================================
+  # Class Path Mode Examples
+  # ========================================
+
+  # Example 5: Multi-Module Maven Project
+  - name: multi-module-maven
+    app-class-path:
+      - projects/maven-app/common/target/classes
+      - projects/maven-app/service/target/classes
+      - projects/maven-app/web/target/classes
+    app-lib-path: projects/maven-app/web/target/lib
+    package-name: com.company.multimodule
+    taint-config: src/main/resources/taint-config-default.yml
+
+  # Example 6: Spring Boot Exploded Application
+  - name: springboot-exploded
+    app-class-path:
+      - projects/springboot-app/BOOT-INF/classes
+    app-lib-path: projects/springboot-app/BOOT-INF/lib
+    package-name: org.springframework.samples
+    taint-config: src/main/resources/taint-config-spring.yml
+
+  # Example 7: Complex Enterprise Application
+  - name: jeecg-boot
+    app-class-path:
+      - TaintBench/jeecg-boot-3.5.0/jeecg-boot-base-core-3.5.0
+      - TaintBench/jeecg-boot-3.5.0/jeecg-module-demo-3.5.0
+      - TaintBench/jeecg-boot-3.5.0/jeecg-system-biz-3.5.0
+      - TaintBench/jeecg-boot-3.5.0/jeecg-system-local-api-3.5.0
+      - TaintBench/jeecg-boot-3.5.0/jeecg-system-start-3.5.0/BOOT-INF/classes
+    app-lib-path: TaintBench/jeecg-boot-3.5.0/jeecg-system-start-3.5.0/BOOT-INF/lib
+    package-name: org.jeecg
+    taint-config: src/main/resources/taint-config-default.yml
+
+  # Example 8: Microservices - Service A
+  - name: microservice-user
+    app-class-path:
+      - projects/microservices/user-service/target/classes
+    app-lib-path: projects/microservices/user-service/target/lib
+    package-name: com.company.microservices.user
+    taint-config: src/main/resources/taint-config-microservice.yml
+
+  # Example 9: Microservices - Service B
+  - name: microservice-order
+    app-class-path:
+      - projects/microservices/order-service/target/classes
+    app-lib-path: projects/microservices/order-service/target/lib
+    package-name: com.company.microservices.order
+    taint-config: src/main/resources/taint-config-microservice.yml
+
+
+# Tips:
+# - Use forward slashes (/) in paths for better cross-platform compatibility
+# - Keep package-name as specific as possible to reduce analysis scope
+# - Group similar projects together for easier management
+# - Use descriptive names to identify projects easily
+# - Customize taint-config for different project types
