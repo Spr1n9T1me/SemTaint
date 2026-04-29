@@ -3,10 +3,6 @@ package com.semtaint.frame.detector.config;
 import java.util.*;
 
 /**
- * 缓存 XML 解析出的框架配置信息
- * 对应 SemTaint 论文 4.2 Framework Modeling 中的 Configuration Model
- *
- * 该类作为框架配置的统一存储，支持：
  * - Spring Bean 定义和依赖注入关系
  * - AOP 配置（切面、切点、通知）
  * - 组件扫描包路径

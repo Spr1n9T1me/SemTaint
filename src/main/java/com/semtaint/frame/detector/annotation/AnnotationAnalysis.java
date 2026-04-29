@@ -11,22 +11,6 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * 注解分析组件 - 采用策略模式
- *
- * <p>职责：</p>
- * <ul>
- *   <li>遍历应用类并识别框架相关的注解</li>
- *   <li>将注解处理任务分发给各个专门的处理器</li>
- *   <li>收集并存储注解分析结果到 AnnotationsHolder</li>
- * </ul>
- *
- * <p>架构定位：</p>
- * <ul>
- *   <li>此类不是 ProgramAnalysis，而是 FrameworkDetector 的内部组件</li>
- *   <li>由 FrameworkDetector 调用并协调</li>
- *   <li>结果通过 AnnotationsHolder 传递给调用者</li>
- * </ul>
- *
  * @see AnnotationsHolder
  */
 public class AnnotationAnalysis {

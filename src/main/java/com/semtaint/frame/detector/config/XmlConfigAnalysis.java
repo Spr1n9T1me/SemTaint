@@ -16,23 +16,6 @@ import java.util.stream.Stream;
 /**
  * XML 配置检测组件
  *
- * <p>职责：</p>
- * <ul>
- *   <li>递归遍历项目目录查找 XML 文件</li>
- *   <li>解析 Spring 配置（Bean、AOP、组件扫描）</li>
- *   <li>解析 MyBatis Mapper 配置</li>
- *   <li>提取框架配置特征并存储到 XmlConfigHolder</li>
- * </ul>
- *
- * <p>架构定位：</p>
- * <ul>
- *   <li>此类是 FrameworkDetector 的内部组件，不是独立的分析</li>
- *   <li>由 FrameworkDetector 调用并协调</li>
- *   <li>结果通过 XmlConfigHolder 传递给调用者</li>
- * </ul>
- *
- * <p>对应 SemTaint 论文 4.2 节中的 Configuration Model 构建阶段</p>
- *
  * @see XmlConfigHolder
  */
 public class XmlConfigAnalysis {
