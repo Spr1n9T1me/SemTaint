@@ -16,22 +16,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
-/**
- * 框架检测器 - 作为 ProgramAnalysis 的统一入口
- * 负责协调注解分析和 XML 配置解析，构建完整的框架模型
- *
- * 对应 SemTaint 论文 4.2 节的 Framework Modeling 阶段
- *
- * <p>架构设计：</p>
- * <ul>
- *   <li>FrameworkDetector：唯一的 ProgramAnalysis，负责整体协调</li>
- *   <li>AnnotationAnalysis：注解分析组件，处理 Spring/MyBatis 注解</li>
- *   <li>XmlConfigAnalysis：XML 配置检测组件，解析 Spring/MyBatis XML</li>
- *   <li>DetectingHolder：统一的结果持有者，合并两个组件的结果</li>
- * </ul>
- *
- * @author springtime
- */
+
 public class FrameworkDetector extends ProgramAnalysis<DetectingHolder> {
 
     public static final String ID = "framework-detector";
@@ -43,10 +28,7 @@ public class FrameworkDetector extends ProgramAnalysis<DetectingHolder> {
     public FrameworkDetector(AnalysisConfig config) {
         super(config);
 
-        // 构建 projectRoots：从 app-class-path（List）和 app-app-lib-path（String）收集路径，
-        // 若路径包含 BOOT-INF 或 WEB-INF，则截取其之前的部分；否则直接使用原路径，最终去重合并。
         Set<String> rootSet = new LinkedHashSet<>();
-//        path.app-class-path 已经在Driver被连接为String了
         String[] classPaths = ConfManager.v().getString("path.app-class-path").split(";");
         for (String p : classPaths) {
             rootSet.add(extractProjectRoot(p));
@@ -98,19 +80,6 @@ public class FrameworkDetector extends ProgramAnalysis<DetectingHolder> {
         return path;
     }
 
-    /**
-     * 执行完整的框架检测流程（ProgramAnalysis 接口方法）
-     *
-     * <p>流程：</p>
-     * <ol>
-     *   <li>执行注解分析（AnnotationAnalysis）</li>
-     *   <li>执行 XML 配置检测（XmlConfigAnalysis）</li>
-     *   <li>将两种来源的配置合并到 DetectingHolder</li>
-     *   <li>保存结果到全局状态</li>
-     * </ol>
-     *
-     * @return DetectingHolder 包含完整的框架检测结果
-     */
     @Override
     public DetectingHolder analyze() {
         System.out.println("\n========== Framework Detection Start ==========");
@@ -191,17 +160,6 @@ public class FrameworkDetector extends ProgramAnalysis<DetectingHolder> {
             methods.forEach(method -> targetHolder.addMapperMethod(namespace, method)));
     }
 
-    /**
-     * 合并 XML 和注解配置
-     *
-     * <p>功能：</p>
-     * <ol>
-     *   <li>将 XML 定义的 Bean 注册到 AnnotationsHolder</li>
-     *   <li>将组件扫描路径添加到全局配置</li>
-     * </ol>
-     *
-     * @param holder 检测结果持有者
-     */
     private void mergeConfigurations(DetectingHolder holder) {
         AnnotationsHolder annotationsHolder = holder.getAnnotationsHolder();
         XmlConfigHolder xmlConfigHolder = holder.getXmlConfigHolder();

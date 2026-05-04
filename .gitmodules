@@ -1,4 +1,4 @@
 [submodule "java-benchmarks"]
 	path = java-benchmarks
-	url = https://github.com/pascal-lab/java-benchmarks
+	url = git@github.com:pascal-lab/java-benchmarks.git
 	branch = jre11/17
